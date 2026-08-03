@@ -71,14 +71,15 @@ static void app_led_init(void)
         .intr_type = GPIO_INTR_DISABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&io));
-    gpio_set_level(AC_LED_GPIO, 0);   /* 初始熄灭 */
+    ESP_ERROR_CHECK(gpio_set_level(AC_LED_GPIO, 0));   /* 初始熄灭 */
     ESP_LOGI(TAG, "LED on GPIO%d initialized (off)", AC_LED_GPIO);
 }
 
 static void app_led_set(bool on)
 {
-    gpio_set_level(AC_LED_GPIO, on ? 1 : 0);
-    ESP_LOGI(TAG, "[LED] power %s", on ? "ON" : "OFF");
+    ESP_ERROR_CHECK(gpio_set_level(AC_LED_GPIO, on ? 1 : 0));
+    ESP_LOGI(TAG, "[LED] power %s (GPIO%d=%d)",
+             on ? "ON" : "OFF", AC_LED_GPIO, on ? 1 : 0);
 }
 
 /* ==================== 命令执行 ==================== */

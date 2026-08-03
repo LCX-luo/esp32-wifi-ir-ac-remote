@@ -3,6 +3,15 @@
 本项目所有重要变更均记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.1.4] - 2026-08-03
+
+### 修复
+- 电源指示灯恢复为 **GPIO23 受控输出**（移除调试用 GPIO23 翻转测试任务），`on`/`off` 命令驱动 D23。
+- `gpio_set_level` 增加 `ESP_ERROR_CHECK` 返回值检查，GPIO 异常可显式暴露。
+
+### 说明
+- 硬件调试确认 D23 即 GPIO23、引脚与驱动 API 均正常；此前「命令到达但灯不亮」实为板载固件为 v0.1.0（无 GPIO 控制代码）所致，详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 7。
+
 ## [v0.1.3] - 2026-08-03
 
 ### 修复
