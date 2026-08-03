@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>空调遥控器 · ESP32</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #0f2027, #203a43, #2c5364);
+    color: #eaf6ff; min-height: 100vh; padding: 16px; padding-bottom: 40px;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 8px 0 4px; letter-spacing: 2px; }
+  .sub { text-align: center; font-size: 12px; color: #8fc0dc; margin-bottom: 16px; }
+  .card {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px; padding: 14px; margin-bottom: 14px; backdrop-filter: blur(4px);
+  }
+  .card h2 { font-size: 13px; color: #8fc0dc; margin-bottom: 10px; font-weight: 600; }
+  .row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .row:last-child { margin-bottom: 0; }
+  input[type=text] {
+    flex: 1; min-width: 0; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px; color: #eaf6ff; padding: 10px 12px; font-size: 14px; outline: none;
+  }
+  input[type=text]:focus { border-color: #4fc3f7; }
+  label { display: block; font-size: 11px; color: #8fc0dc; margin-bottom: 4px; }
+  button {
+    border: none; border-radius: 10px; padding: 12px 0; font-size: 15px; font-weight: 600;
+    color: #fff; background: #1f5f7a; cursor: pointer; transition: transform .05s, filter .2s;
+    flex: 1; min-width: 0;
+  }
+  button:active { transform: scale(0.95); }
+  button.primary { background: #0a84d0; }
+  button.on { background: #2e7d32; }
+  button.off { background: #b3261e; }
+  button.small { flex: 0 0 auto; padding: 12px 18px; }
+  .btn-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn-grid button { flex: 1 1 30%; }
+  #conn-status {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    background: #666; margin-right: 6px; vertical-align: middle;
+  }
+  #conn-status.on { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  #temp-val { font-size: 32px; font-weight: 700; color: #4fc3f7; text-align: center; margin: 4px 0; }
+  #log {
+    background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; height: 150px;
+    overflow-y: auto; font-family: Consolas, monospace; font-size: 11px; color: #9fd7f0;
+    white-space: pre-wrap; word-break: break-all;
+  }
+</style>
+</head>
+<body>
+  <h1>❄ 空调遥控器</h1>
+  <div class="sub">远程控制 ESP32 · WiFi + MQTT</div>
+
+  <div class="card">
+    <h2>连接配置</h2>
+    <div class="row">
+      <div style="flex:2"><label>设备 ID（串口日志可查）</label>
+        <input type="text" id="dev" placeholder="例如 3c71bf"></div>
+      <div style="flex:1"><label>主题前缀</label>
+        <input type="text" id="prefix" value="/ac-remote"></div>
+    </div>
+    <div class="row">
+      <div style="flex:1"><label>Broker (WebSocket)</label>
+        <input type="text" id="broker" value="wss://broker.emqx.io:8084/mqtt"></div>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="doConnect()">连接</button>
+      <button class="off" onclick="doDisconnect()">断开</button>
+    </div>
+    <div style="font-size:12px;color:#8fc0dc"><span id="conn-status"></span><span id="conn-text">未连接</span></div>
+  </div>
+
+  <div class="card">
+    <h2>电源</h2>
+    <div class="btn-grid">
+      <button class="on" onclick="send({'cmd':'on'})">开</button>
+      <button class="off" onclick="send({'cmd':'off'})">关</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>模式</h2>
+    <div class="btn-grid">
+      <button onclick="send({'cmd':'mode','mode':'auto'})">自动</button>
+      <button onclick="send({'cmd':'mode','mode':'cool'})">制冷</button>
+      <button onclick="send({'cmd':'mode','mode':'heat'})">制热</button>
+      <button onclick="send({'cmd':'mode','mode':'dry'})">除湿</button>
+      <button onclick="send({'cmd':'mode','mode':'fan'})">送风</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>温度 <span style="float:right;font-size:11px">24~30°C</span></h2>
+    <div id="temp-val">26°C</div>
+    <div class="btn-grid">
+      <button class="off" onclick="tempStep(-1)">− 降温</button>
+      <button class="on"  onclick="tempStep(1)">+ 升温</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>风速</h2>
+    <div class="btn-grid">
+      <button onclick="send({'cmd':'fan','fan':'auto'})">自动</button>
+      <button onclick="send({'cmd':'fan','fan':'low'})">低</button>
+      <button onclick="send({'cmd':'fan','fan':'mid'})">中</button>
+      <button onclick="send({'cmd':'fan','fan':'high'})">高</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>通信日志</h2>
+    <div id="log">等待连接...</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js"></script>
+  <script>
+    let client = null;
+    let connected = false;
+    let temp = 26;
+    const MIN_T = 16, MAX_T = 30;
+
+    const $ = id => document.getElementById(id);
+
+    function log(msg) {
+      const el = $('log');
+      const time = new Date().toTimeString().slice(0, 8);
+      el.textContent += `[${time}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+    function setConn(on) {
+      connected = on;
+      $('conn-status').className = on ? 'on' : '';
+      $('conn-text').textContent = on ? '已连接 broker' : '未连接';
+    }
+    function topicOf(suffix) {
+      const prefix = $('prefix').value.trim() || '/ac-remote';
+      const dev = $('dev').value.trim();
+      if (!dev) { log('请先填写设备 ID'); return null; }
+      return `${prefix}/${dev}/${suffix}`;
+    }
+
+    function doConnect() {
+      if (client) { log('已存在连接，先断开'); doDisconnect(); }
+      const url = $('broker').value.trim();
+      if (!url) { log('请填写 broker 地址'); return; }
+      const clientId = 'web_ac_' + Math.random().toString(16).slice(2, 10);
+      try {
+        client = mqtt.connect(url, { clientId, connectTimeout: 8000, reconnectPeriod: 3000 });
+      } catch (e) { log('连接异常: ' + e.message); return; }
+
+      client.on('connect', () => {
+        setConn(true);
+        const t = topicOf('status');
+        if (t) client.subscribe(t, { qos: 1 });
+        log('已连接 ' + url);
+        if (t) log('已订阅 ' + t);
+      });
+      client.on('message', (topic, payload) => {
+        log('收到状态 ← ' + topic + '  ' + payload.toString());
+      });
+      client.on('close', () => { setConn(false); log('连接已关闭'); });
+      client.on('error', e => { log('错误: ' + e.message); });
+      log('正在连接 ' + url + ' ...');
+    }
+
+    function doDisconnect() {
+      if (client) { try { client.end(true); } catch (e) {} client = null; }
+      setConn(false);
+      log('已断开');
+    }
+
+    function send(msg) {
+      if (!connected) { log('未连接，无法发送'); return; }
+      const t = topicOf('cmd');
+      if (!t) return;
+      client.publish(t, JSON.stringify(msg), { qos: 1 });
+      log('发送命令 → ' + t + '  ' + JSON.stringify(msg));
+    }
+
+    function updateTempView() { $('temp-val').textContent = temp + '°C'; }
+
+    function tempStep(d) {
+      temp = Math.min(MAX_T, Math.max(MIN_T, temp + d));
+      updateTempView();
+      send({ cmd: 'temp', temp: temp });
+    }
+  </script>
+</body>
+</html>
