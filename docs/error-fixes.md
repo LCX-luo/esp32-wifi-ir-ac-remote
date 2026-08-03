@@ -74,3 +74,10 @@
   1. 手动计算 base64 / 哈希极易出错，务必用工具核对（如 `python -c "import base64; ..."`）；
   2. MQTT 排错第一步：**核对发布与订阅的主题是否精确一致**；浏览器调试时查看 WebSocket 帧里实际发布的 topic；
   3. 通过「DOM 文本 + 正则」反向提取连接参数（如 device_id）的写法脆弱，应直接保存到全局变量。
+
+### 问题 6：浏览器"跟踪防护"屏蔽 mqtt.js CDN，导致库加载异常、命令发不出
+
+- **现象**：浏览器控制台反复出现 `Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js`，网页按键无任何网络事件。
+- **根因**：页面通过第三方 CDN（jsdelivr）加载 mqtt.js，浏览器（Edge/Chrome）的"跟踪防护"会阻断这类跨站脚本对存储的访问/执行，导致 `mqtt` 对象不可用，MQTT 连接无法建立，所有命令被"未连接"拦下。
+- **解决**：把 `mqtt.min.js` 下载到仓库 `web/vendor/`，页面改用**同源相对路径** `<script src="vendor/mqtt.min.js">`，由 GitHub Pages 从本站域名提供，不再经过第三方 CDN。
+- **经验**：IoT Web 控制端应**本地化全部 JS 依赖**，避免第三方 CDN 被浏览器安全策略/网络环境阻断；关键链路（库加载 → 连接 → publish）加 console 日志便于快速定位。

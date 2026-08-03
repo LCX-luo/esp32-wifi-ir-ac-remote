@@ -3,6 +3,15 @@
 本项目所有重要变更均记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.1.3] - 2026-08-03
+
+### 修复
+- **mqtt.js 本地化**：改用仓库内 `web/vendor/mqtt.min.js` 同源加载，规避浏览器"跟踪防护"对第三方 CDN（jsdelivr）的屏蔽（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 6）。
+- 修复 HTML `<label>` 与表单控件未关联的无障碍警告。
+
+### 变更
+- 全链路增加 **console 调试输出**：库加载检查、连接各事件、publish 的主题与负载、按钮点击、全局错误捕获，便于定位问题。
+
 ## [v0.1.2] - 2026-08-03
 
 ### 修复
