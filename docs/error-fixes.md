@@ -45,3 +45,16 @@
 - **根因**：ESP-IDF 5.x 将 MQTT 配置重构为嵌套结构：地址在 `broker.address`，认证在 `credentials.username` / `credentials.authentication.password`，会话参数在 `session.keepalive`。
 - **解决**：对照 `components/mqtt/esp-mqtt/include/mqtt_client.h` 中的结构体定义确认字段层级后修正。
 - **经验**：ESP-IDF 大版本升级常有 API 结构变化，写配置代码前先核对目标版本头文件，而不是照抄旧示例。
+
+### 问题 4：使用 GPIO API 报 "driver component is not in the requirements list"
+
+- **现象**：`main.c` 新增 `#include "driver/gpio.h"`（`gpio_config` / `gpio_set_level`）后编译失败，提示 `driver component(s) is not in the requirements list of "main"`。
+- **根因**：ESP-IDF 的组件依赖是**显式声明**的——`main` 组件的 `idf_component_register()` 里没有把 `driver` 加入 `REQUIRES`，构建系统拒绝让 `main.c` 包含 `driver` 组件的头文件。
+- **解决**：在 `main/CMakeLists.txt` 的 `REQUIRES` 中追加 `driver`：
+
+  ```cmake
+  idf_component_register(SRCS "main.c"
+                      INCLUDE_DIRS "."
+                      REQUIRES nvs_flash esp_wifi esp_netif esp_event mqtt json driver)
+  ```
+- **经验**：每引入一个新组件（头文件在 `components/xxx/include` 下），都要记得把 `xxx` 加进 `REQUIRES`。可以用编译错误的提示反查缺哪个组件。

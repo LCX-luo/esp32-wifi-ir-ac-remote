@@ -39,4 +39,13 @@ menu "AC Remote Configuration"
             Full topics: {prefix}/{device_id}/cmd and {prefix}/{device_id}/status
             device_id is the last 3 bytes of the WiFi MAC (hex).
 
+    config AC_LED_GPIO
+        int "Power LED GPIO (indicator, IR not ready)"
+        default 23
+        range 0 39
+        help
+            GPIO number for the power indicator LED (before the IR module
+            arrives). High level turns the LED on. "on"/"off" commands
+            toggle this pin.
+
 endmenu

@@ -39,8 +39,10 @@ flowchart LR
 | 设备唯一标识 | MAC 地址生成 device_id，主题互不冲突 | ✅ |
 | JSON 命令解析 | cJSON 解析 `{"cmd":"on"}` 等指令 | ✅ |
 | 命令分发接口 | `app_command_execute()`，预留红外接入点 | ✅ |
-| 网页版遥控器 | 手机浏览器直接操作，无需 App | ✅ |
-| 菜单化配置 | WiFi/MQTT 参数走 menuconfig，无需改代码 | ✅ |
+| 网页版遥控器 | 手机浏览器直接操作，无需 App（GitHub Pages 托管） | ✅ |
+| 访问密码登录 | 输入密码自动连接设备，无需输入设备 ID | ✅ |
+| 电源指示灯 | `on`/`off` 命令驱动 GPIO（默认 D23），红外前可直观验证 | ✅ |
+| 菜单化配置 | WiFi/MQTT/GPIO 参数走 menuconfig，无需改代码 | ✅ |
 | 红外发射 | 发射空调红外码 | 🚧 待红外模块 |
 | Android App | 原生控制端 | 🚧 路线图 |
 
@@ -61,6 +63,7 @@ VSCode: Ctrl+E, O   （或 ESP-IDF: Open Component Configuration）
 | `MQTT Broker URI` | 公共服务器地址 | `mqtt://broker.emqx.io` |
 | `MQTT Username/Password` | 可选，公共服务器一般不填 | 空 |
 | `MQTT Topic Prefix` | 主题前缀 | `/ac-remote` |
+| `Power LED GPIO` | 电源指示灯引脚 | `23`（D23） |
 
 ### 2. 编译烧录
 
@@ -84,21 +87,21 @@ I (123) ac_remote: status topic = /ac-remote/3c71bf/status
 
 ### 4. 网页版遥控器
 
-1. 在电脑 `web/` 目录起一个静态服务器（手机和电脑需在同一网络，或直接双击 HTML 用 file:// 打开试试）：
+手机/电脑浏览器打开托管网址（GitHub Pages）：
 
-   ```bash
-   cd web && python -m http.server 8000
-   # 手机浏览器访问 http://<电脑局域网IP>:8000/remote_control.html
-   ```
+> 🔗 **https://LCX-luo.github.io/esp32-wifi-ir-ac-remote/**
 
-2. 填写 **设备 ID**（上一步串口里的值，如 `3c71bf`），点 **连接**。
-3. 点 **开 / 关 / 模式 / 温度 / 风速** 按钮。
-4. 回到 ESP32 串口监视器，看到命令被打印即表示**链路打通**：
+1. 输入**访问密码** `060718` → 点 **连接设备**（密码自动关联到本机设备，无需输入设备 ID）。
+2. 连接成功后进入遥控界面，点 **⏻ 电源按钮**（开 / 关）。
+3. 回到 ESP32 串口监视器，应看到命令执行 + LED 状态变化：
 
 ```
 I (4567) ac_remote: received topic=/ac-remote/3c71bf/cmd data={"cmd":"on"}
 I (4567) ac_remote: [EXEC] >>> executing command: on
+I (4567) ac_remote: [LED] power ON
 ```
+
+> 本地调试也可：`web/` 目录运行 `python -m http.server 8000`，浏览器打开 `http://localhost:8000/remote_control.html`（高级设置里可改 Broker/前缀，平时无需改动）。
 
 ## 主题与消息格式
 
@@ -107,7 +110,7 @@ I (4567) ac_remote: [EXEC] >>> executing command: on
 | 控制端 → ESP32 | `{prefix}/{device_id}/cmd` | QoS 1，命令消息 |
 | ESP32 → 控制端 | `{prefix}/{device_id}/status` | QoS 1 + 保留，状态消息 |
 
-**命令消息**（ESP32 当前打印 `cmd` 字段，红外模块接入后执行）：
+**命令消息**（当前阶段：`on`/`off` 驱动电源指示灯 GPIO；`mode`/`temp`/`fan` 仅解析记录，红外模块接入后执行）：
 
 ```json
 {"cmd":"on"}                          // 开

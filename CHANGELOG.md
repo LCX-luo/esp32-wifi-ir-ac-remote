@@ -3,6 +3,20 @@
 本项目所有重要变更均记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.1.1] - 2026-08-03
+
+### 新增
+- **电源指示灯控制**：`on`/`off` 命令绑定 GPIO（默认 D23，`AC_LED_GPIO` 可配），红外模块未到前可通过 LED 直观看到远程控制效果。
+- **网页版遥控器重构**：白色 + 淡蓝色系、简洁移动端布局；默认隐藏 Broker/主题前缀等高级设置（可折叠展开）。
+- **访问密码登录**：输入密码 `060718` 自动连接设备 `e9a8e8`，无需手动输入设备 ID；设备 ID 以 base64 混淆存储于前端（演示级保护，见 README 安全说明）。
+- **GitHub Pages 托管**：网页遥控器通过 `gh-pages` 分支部署，手机/电脑浏览器打开网址即可用。
+
+### 修复
+- `main.c` 使用 `driver/gpio.h` 但未声明 `driver` 组件依赖，导致编译失败（详见 [docs/error-fixes.md](docs/error-fixes.md)）。
+
+### 变更
+- `on`/`off` 命令现在同时控制电源指示灯（原为仅日志）；`mode`/`temp`/`fan` 仍仅解析记录，待红外模块接入。
+
 ## [v0.1.0] - 2026-08-03
 
 ### 新增

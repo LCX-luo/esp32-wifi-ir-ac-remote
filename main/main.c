@@ -23,6 +23,7 @@
 #include "nvs_flash.h"
 #include "mqtt_client.h"
 #include "cJSON.h"
+#include "driver/gpio.h"
 
 #define AC_WIFI_SSID       CONFIG_AC_WIFI_SSID
 #define AC_WIFI_PASS       CONFIG_AC_WIFI_PASSWORD
@@ -30,6 +31,7 @@
 #define AC_MQTT_USER       CONFIG_AC_MQTT_USERNAME
 #define AC_MQTT_PWD        CONFIG_AC_MQTT_PASSWORD
 #define AC_TOPIC_PREFIX    CONFIG_AC_MQTT_TOPIC_PREFIX
+#define AC_LED_GPIO        ((gpio_num_t)CONFIG_AC_LED_GPIO)
 
 static const char *TAG = "ac_remote";
 
@@ -57,11 +59,34 @@ static void app_build_identity(void)
     ESP_LOGI(TAG, "status topic = %s", s_status_topic);
 }
 
+/* ==================== 电源指示灯（红外模块未到前的临时效果） ==================== */
+
+static void app_led_init(void)
+{
+    gpio_config_t io = {
+        .pin_bit_mask = (1ULL << AC_LED_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io));
+    gpio_set_level(AC_LED_GPIO, 0);   /* 初始熄灭 */
+    ESP_LOGI(TAG, "LED on GPIO%d initialized (off)", AC_LED_GPIO);
+}
+
+static void app_led_set(bool on)
+{
+    gpio_set_level(AC_LED_GPIO, on ? 1 : 0);
+    ESP_LOGI(TAG, "[LED] power %s", on ? "ON" : "OFF");
+}
+
 /* ==================== 命令执行 ==================== */
 
 /**
  * 命令分发入口：解析后的 JSON 命令在此执行。
- * 第一步：仅打印日志验证链路。后续把 cmd 映射为空调红外码并发射。
+ * 当前阶段：on/off 绑定电源指示灯 GPIO（LED 正极接 AC_LED_GPIO）。
+ * TODO(红外模块): 将 cmd 映射为空调红外码并发射，替换/叠加到 LED 控制。
  */
 static void app_command_execute(const cJSON *root)
 {
@@ -73,10 +98,17 @@ static void app_command_execute(const cJSON *root)
 
     ESP_LOGI(TAG, "[EXEC] >>> executing command: %s", cmd->valuestring);
 
-    /* TODO(红外模块): 将 cmd 映射为空调红外码并发射，例如
-     *   if (!strcmp(cmd->valuestring, "on"))   ir_send(IR_POWER);
-     *   else if (!strcmp(cmd->valuestring, "off")) ir_send(IR_POWER);
-     *   以及 mode / temp 等参数的控制 */
+    if (!strcmp(cmd->valuestring, "on")) {
+        app_led_set(true);
+        /* TODO(红外): ir_send(IR_POWER); */
+    } else if (!strcmp(cmd->valuestring, "off")) {
+        app_led_set(false);
+        /* TODO(红外): ir_send(IR_POWER); */
+    } else {
+        /* mode/temp/fan 等参数后续红外模块使用时再解析执行 */
+        ESP_LOGI(TAG, "[EXEC] command ignored (IR module not ready yet): %s",
+                 cmd->valuestring);
+    }
 }
 
 /* ==================== MQTT 事件 ==================== */
@@ -211,6 +243,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     app_build_identity();
+    app_led_init();      /* 初始化电源指示灯 */
     wifi_init_sta();
 
     while (1) {
