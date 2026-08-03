@@ -3,6 +3,15 @@
 本项目所有重要变更均记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.1.2] - 2026-08-03
+
+### 修复
+- **网页遥控器设备 ID base64 编码错误**：`atob('ZThhOGU4')` 解码为 `e8a8e8`（应为 `e9a8e8`），导致命令发布到错误主题、ESP32 收不到（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 5）。已移除 base64 混淆层，设备 ID 直接为可配置字符串。
+
+### 变更
+- **取消访问密码限制**（开发阶段）：网页打开即自动连接默认设备 `e9a8e8`，无需输入密码。设备 ID / Broker / 前缀在"高级设置"中可改。
+- 简化发送逻辑：移除 DOM 正则提取设备 ID 的脆弱写法，改用全局变量 `s_devId`。
+
 ## [v0.1.1] - 2026-08-03
 
 ### 新增

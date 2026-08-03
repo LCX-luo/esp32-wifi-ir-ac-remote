@@ -40,7 +40,7 @@ flowchart LR
 | JSON 命令解析 | cJSON 解析 `{"cmd":"on"}` 等指令 | ✅ |
 | 命令分发接口 | `app_command_execute()`，预留红外接入点 | ✅ |
 | 网页版遥控器 | 手机浏览器直接操作，无需 App（GitHub Pages 托管） | ✅ |
-| 访问密码登录 | 输入密码自动连接设备，无需输入设备 ID | ✅ |
+| 自动连接 | 打开网页即连接本机设备（开发阶段免登录） | ✅ |
 | 电源指示灯 | `on`/`off` 命令驱动 GPIO（默认 D23），红外前可直观验证 | ✅ |
 | 菜单化配置 | WiFi/MQTT/GPIO 参数走 menuconfig，无需改代码 | ✅ |
 | 红外发射 | 发射空调红外码 | 🚧 待红外模块 |
@@ -87,16 +87,16 @@ I (123) ac_remote: status topic = /ac-remote/3c71bf/status
 
 ### 4. 网页版遥控器
 
-手机/电脑浏览器打开托管网址（GitHub Pages）：
+手机/电脑浏览器打开托管网址（GitHub Pages），**打开即自动连接，无需登录**：
 
 > 🔗 **https://LCX-luo.github.io/esp32-wifi-ir-ac-remote/**
 
-1. 输入**访问密码** `060718` → 点 **连接设备**（密码自动关联到本机设备，无需输入设备 ID）。
-2. 连接成功后进入遥控界面，点 **⏻ 电源按钮**（开 / 关）。
+1. 页面加载后顶部状态变为"已连接"（设备 ID `e9a8e8` 显示在右上角，可在底部"高级设置"修改）。
+2. 点 **⏻ 电源按钮**（开 / 关）。
 3. 回到 ESP32 串口监视器，应看到命令执行 + LED 状态变化：
 
 ```
-I (4567) ac_remote: received topic=/ac-remote/3c71bf/cmd data={"cmd":"on"}
+I (4567) ac_remote: received topic=/ac-remote/e9a8e8/cmd data={"cmd":"on"}
 I (4567) ac_remote: [EXEC] >>> executing command: on
 I (4567) ac_remote: [LED] power ON
 ```
@@ -147,6 +147,7 @@ I (4567) ac_remote: [LED] power ON
 本项目默认使用**公共免费 Broker + 明文 MQTT（1883）**，仅用于演示与开发：
 - 任何人可尝试连接公共 Broker，主题名是唯一的隔离手段（这也是用 MAC 生成 device_id 的原因）。
 - 明文传输，不要传输敏感数据。
+- 当前开发阶段网页未设访问控制，**任何人打开网址即可控制该设备**，请勿在公共环境长期使用；正式版需加入访问密码/令牌校验。
 - **生产环境建议**：改用自建/云托管 Broker（如 EMQX Serverless），启用 TLS（`mqtts://`）、用户名密码认证、独立私密主题。本项目的 Kconfig 已预留 Username/Password 和 URI 配置位。
 
 ## 目录结构

@@ -58,3 +58,19 @@
                       REQUIRES nvs_flash esp_wifi esp_netif esp_event mqtt json driver)
   ```
 - **经验**：每引入一个新组件（头文件在 `components/xxx/include` 下），都要记得把 `xxx` 加进 `REQUIRES`。可以用编译错误的提示反查缺哪个组件。
+
+### 问题 5：网页遥控器发命令无效果，ESP32 收不到（设备 ID base64 编码错误）
+
+- **现象**：网页能正常连接 Broker（登录"有行为"），但点电源/温度等按钮 ESP32 串口无任何输出（按键"无行为"）。
+- **根因**：前端设备注册表 `atob('ZThhOGU4')` 是手算的 base64，**编码错误**——解码结果是 `e8a8e8`，而真实设备 ID 是 `e9a8e8`。命令被发布到错误主题 `/ac-remote/e8a8e8/cmd`，ESP32 订阅的是 `/ac-remote/e9a8e8/cmd`，主题不匹配，永远收不到。
+
+  ```python
+  base64.b64decode('ZThhOGU4')   # → b'e8a8e8'（错）
+  base64.b64encode(b'e9a8e8')    # → b'ZTlhOGU4'（正确的 base64 应为 ZTlhOGU4）
+  ```
+
+- **解决**：取消 base64 混淆层，设备 ID 直接作为字符串常量 `DEFAULT_DEVICE = 'e9a8e8'` 写在网页前端，并在"高级设置"中可修改。
+- **经验**：
+  1. 手动计算 base64 / 哈希极易出错，务必用工具核对（如 `python -c "import base64; ..."`）；
+  2. MQTT 排错第一步：**核对发布与订阅的主题是否精确一致**；浏览器调试时查看 WebSocket 帧里实际发布的 topic；
+  3. 通过「DOM 文本 + 正则」反向提取连接参数（如 device_id）的写法脆弱，应直接保存到全局变量。

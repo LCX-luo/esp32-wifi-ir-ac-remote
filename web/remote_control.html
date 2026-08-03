@@ -14,43 +14,20 @@
   }
   .wrap { width: 100%; max-width: 420px; }
 
-  /* ---------- 通用卡片 ---------- */
   .card {
     background: #ffffff; border: 1px solid #dbe9fb; border-radius: 16px;
     padding: 18px; margin-bottom: 14px; box-shadow: 0 2px 10px rgba(43,127,255,0.06);
   }
   .card h2 { font-size: 13px; color: #5b7ca3; margin-bottom: 12px; font-weight: 600; }
 
-  /* ---------- 登录页 ---------- */
-  #login-view { padding-top: 12vh; text-align: center; }
-  .logo { font-size: 56px; margin-bottom: 8px; }
-  #login-view h1 { font-size: 22px; color: #1a3a5c; letter-spacing: 2px; }
-  .login-sub { font-size: 13px; color: #8aa7c8; margin: 6px 0 26px; }
-  .pass-input {
-    width: 100%; text-align: center; font-size: 26px; letter-spacing: 14px;
-    padding: 14px 0; border: 2px solid #cfe3fb; border-radius: 12px;
-    background: #f6faff; color: #1a3a5c; outline: none;
-  }
-  .pass-input:focus { border-color: #2b7fff; }
-  .login-btn {
-    width: 100%; margin-top: 16px; padding: 14px 0; font-size: 16px; font-weight: 600;
-    border: none; border-radius: 12px; color: #fff; background: #2b7fff;
-    cursor: pointer; transition: filter .2s;
-  }
-  .login-btn:active { filter: brightness(0.92); }
-  .login-err { color: #d93025; font-size: 13px; margin-top: 12px; min-height: 18px; }
-  details.hidden-opt { margin-top: 22px; font-size: 12px; color: #8aa7c8; }
-  details.hidden-opt summary { cursor: pointer; }
-  details.hidden-opt input { width: 100%; margin-top: 8px; padding: 8px 10px; font-size: 12px;
-    border: 1px solid #dbe9fb; border-radius: 8px; background: #f6faff; color: #1a3a5c; outline: none; }
-
-  /* ---------- 遥控页 ---------- */
+  /* 顶部状态 */
   .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .status { display: flex; align-items: center; font-size: 13px; color: #5b7ca3; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #c5d5e8; margin-right: 6px; }
   .dot.on { background: #34c759; box-shadow: 0 0 6px #34c759; }
   .dot.err { background: #ff9500; }
 
+  /* 电源按钮 */
   .power-box { text-align: center; padding: 22px 0 16px; }
   .power-btn {
     width: 130px; height: 130px; border-radius: 50%; border: none; cursor: pointer;
@@ -90,163 +67,133 @@
   }
   details.collapse { font-size: 12px; color: #8aa7c8; }
   details.collapse summary { cursor: pointer; margin-bottom: 6px; }
+  details.collapse label { display: block; margin-top: 8px; color: #8aa7c8; }
+  details.collapse input {
+    width: 100%; margin-top: 4px; padding: 8px 10px; font-size: 12px;
+    border: 1px solid #dbe9fb; border-radius: 8px; background: #f6faff; color: #1a3a5c; outline: none;
+  }
+  details.collapse .reconnect { margin-top: 10px; padding: 8px 16px; font-size: 12px;
+    border: none; border-radius: 8px; background: #e8f1ff; color: #2b7fff; cursor: pointer; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <!-- ================= 登录页 ================= -->
-  <div id="login-view">
-    <div class="logo">❄</div>
-    <h1>空调遥控器</h1>
-    <div class="login-sub">请输入访问密码连接你的设备</div>
-    <input class="pass-input" id="pass" type="password" maxlength="6"
-           placeholder="••••••" autocomplete="off">
-    <button class="login-btn" id="login-btn">连接设备</button>
-    <div class="login-err" id="login-err"></div>
-    <details class="hidden-opt">
-      <summary>高级设置</summary>
-      <input type="text" id="broker" value="wss://broker.emqx.io:8084/mqtt">
-      <input type="text" id="prefix" value="/ac-remote" style="margin-top:6px">
-    </details>
+  <div class="header">
+    <div class="status"><span class="dot" id="dot"></span><span id="status-text">连接中...</span></div>
+    <div class="status" id="dev-label" style="font-size:12px;color:#8aa7c8"></div>
   </div>
 
-  <!-- ================= 遥控页 ================= -->
-  <div id="remote-view" hidden>
-    <div class="header">
-      <div class="status"><span class="dot" id="dot"></span><span id="status-text">连接中...</span></div>
-      <div class="status" style="font-size:12px;color:#8aa7c8" id="dev-label"></div>
+  <div class="card">
+    <div class="power-box">
+      <button class="power-btn" id="power-btn" onclick="togglePower()">
+        <span class="ico">⏻</span><span id="power-text">关机</span>
+      </button>
     </div>
-
-    <div class="card">
-      <div class="power-box">
-        <button class="power-btn" id="power-btn" onclick="togglePower()">
-          <span class="ico">⏻</span><span id="power-text">关机</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>温度</h2>
-      <div class="temp-row">
-        <button class="round" onclick="tempStep(-1)">−</button>
-        <div class="temp-val"><span id="temp-val">26</span><small>°C</small></div>
-        <button class="round" onclick="tempStep(1)">+</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>模式</h2>
-      <div class="grid" id="mode-grid">
-        <button data-v="auto">自动</button>
-        <button data-v="cool">制冷</button>
-        <button data-v="heat">制热</button>
-        <button data-v="dry">除湿</button>
-        <button data-v="fan">送风</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>风速</h2>
-      <div class="grid" id="fan-grid">
-        <button data-v="auto">自动</button>
-        <button data-v="low">低</button>
-        <button data-v="mid">中</button>
-        <button data-v="high">高</button>
-      </div>
-    </div>
-
-    <details class="collapse">
-      <summary>通信日志</summary>
-      <div id="log"></div>
-    </details>
   </div>
+
+  <div class="card">
+    <h2>温度</h2>
+    <div class="temp-row">
+      <button class="round" onclick="tempStep(-1)">−</button>
+      <div class="temp-val"><span id="temp-val">26</span><small>°C</small></div>
+      <button class="round" onclick="tempStep(1)">+</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>模式</h2>
+    <div class="grid" id="mode-grid">
+      <button data-v="auto">自动</button>
+      <button data-v="cool">制冷</button>
+      <button data-v="heat">制热</button>
+      <button data-v="dry">除湿</button>
+      <button data-v="fan">送风</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>风速</h2>
+    <div class="grid" id="fan-grid">
+      <button data-v="auto">自动</button>
+      <button data-v="low">低</button>
+      <button data-v="mid">中</button>
+      <button data-v="high">高</button>
+    </div>
+  </div>
+
+  <details class="collapse">
+    <summary>高级设置</summary>
+    <label>设备 ID</label>
+    <input type="text" id="device" value="e9a8e8">
+    <label>Broker (WebSocket)</label>
+    <input type="text" id="broker" value="wss://broker.emqx.io:8084/mqtt">
+    <label>主题前缀</label>
+    <input type="text" id="prefix" value="/ac-remote">
+    <button class="reconnect" onclick="connectBroker()">重新连接</button>
+  </details>
+
+  <details class="collapse">
+    <summary>通信日志</summary>
+    <div id="log">连接中...</div>
+  </details>
 
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js"></script>
 <script>
-/* ================= 配置（演示级安全，勿存敏感信息） ================= */
-/* 设备注册表：访问密码 → 设备ID。设备ID经 base64 混淆存储。 */
-const DEVICE_REGISTRY = {
-  '060718': atob('ZThhOGU4')        /* → e9a8e8 */
-};
 const DEFAULT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
 const DEFAULT_PREFIX = '/ac-remote';
+const DEFAULT_DEVICE = 'e9a8e8';   /* 本机 ESP32 设备 ID（MAC 后 3 字节） */
 
 let client = null;
 let connected = false;
 let powerOn = false;
 let temp = 26;
+let s_devId = DEFAULT_DEVICE;
 const MIN_T = 16, MAX_T = 30;
 const $ = id => document.getElementById(id);
 
-/* ================= 登录 ================= */
-$('login-btn').addEventListener('click', login);
-$('pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
-
-function login() {
-  const pwd = $('pass').value.trim();
-  const devId = DEVICE_REGISTRY[pwd];
-  if (!devId) { $('login-err').textContent = '密码错误，请重试'; return; }
-  $('login-err').textContent = '';
-  connectBroker(devId);
-}
-
 /* ================= MQTT 连接 ================= */
-function connectBroker(devId) {
+function connectBroker() {
+  if (client) { try { client.end(true); } catch (e) {} client = null; }
+  connected = false;
+
   const broker = $('broker').value.trim() || DEFAULT_BROKER;
   const prefix = $('prefix').value.trim() || DEFAULT_PREFIX;
-  const clientId = 'web_' + Math.random().toString(16).slice(2, 10);
+  s_devId = ($('device').value.trim() || DEFAULT_DEVICE).toLowerCase();
+  $('dev-label').textContent = '设备 ' + s_devId;
 
+  const clientId = 'web_' + Math.random().toString(16).slice(2, 10);
   try {
     client = mqtt.connect(broker, { clientId, connectTimeout: 8000, reconnectPeriod: 3000 });
-  } catch (e) { $('login-err').textContent = '连接异常: ' + e.message; return; }
+  } catch (e) { log('连接异常: ' + e.message); setDot('err', '连接失败'); return; }
 
   client.on('connect', () => {
     connected = true;
-    showRemote(devId);
     setDot('on', '已连接');
-    client.subscribe(`${prefix}/${devId}/status`, { qos: 1 });
-    log(`已连接 ${broker}`);
+    client.subscribe(`${prefix}/${s_devId}/status`, { qos: 1 });
+    log('已连接 ' + broker);
   });
   client.on('message', (topic, payload) => {
-    log(`状态 ← ${payload.toString()}`);
+    log('状态 ← ' + payload.toString());
     try {
       const j = JSON.parse(payload.toString());
       if (j && j.state === 'online') setDot('on', '设备在线');
     } catch (e) {}
   });
-  client.on('close',  () => { connected = false; setDot('', '连接断开'); });
-  client.on('error',  e  => { log('错误: ' + e.message); setDot('err', '连接失败'); });
+  client.on('close', () => { connected = false; setDot('', '连接断开'); });
+  client.on('error', e => { log('错误: ' + e.message); setDot('err', '连接失败'); });
 
-  $('login-err').textContent = '正在连接，请稍候...';
-}
-
-function showRemote(devId) {
-  $('login-view').hidden = true;
-  $('remote-view').hidden = false;
-  $('dev-label').textContent = '设备 ' + devId;
-}
-
-function setDot(state, text) {
-  $('dot').className = 'dot' + (state ? ' ' + state : '');
-  $('status-text').textContent = text;
+  setDot('', '连接中...');
 }
 
 /* ================= 发送命令 ================= */
 function publish(msg) {
   if (!connected) { log('未连接，无法发送'); return; }
   const prefix = $('prefix').value.trim() || DEFAULT_PREFIX;
-  const devId = Object.values(DEVICE_REGISTRY).find(d => d === currentDevId());
-  if (!devId) return;
-  const topic = `${prefix}/${devId}/cmd`;
-  client.publish(topic, JSON.stringify(msg), { qos: 1 });
-  log(`发送 → ${JSON.stringify(msg)}`);
-}
-function currentDevId() {
-  /* 从登录态获取：通过 dev-label 显示值 */
-  return ($('dev-label').textContent.match(/设备\s+(\S+)/) || [])[1];
+  client.publish(`${prefix}/${s_devId}/cmd`, JSON.stringify(msg), { qos: 1 });
+  log('发送 → ' + JSON.stringify(msg));
 }
 
 /* ================= 电源 ================= */
@@ -288,6 +235,13 @@ function log(msg) {
   el.textContent += `[${t}] ${msg}\n`;
   el.scrollTop = el.scrollHeight;
 }
+function setDot(state, text) {
+  $('dot').className = 'dot' + (state ? ' ' + state : '');
+  $('status-text').textContent = text;
+}
+
+/* 打开页面即自动连接 */
+window.addEventListener('load', connectBroker);
 </script>
 </body>
 </html>
