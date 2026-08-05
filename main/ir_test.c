@@ -88,6 +88,13 @@ static void ir_parse_segment(int start, int end)
               (bytes[5] == (uint8_t)~bytes[4]);
     ESP_LOGI(TAG, "[MIDEA] A=0x%02X B=0x%02X C=0x%02X  反码校验:%s",
              bytes[0], bytes[2], bytes[4], ok ? "OK" : "FAIL");
+    /* 重建 remote_state（发送顺序 byte5..byte0，字节0 在最低位），供与发射端对比 */
+    uint64_t state = 0;
+    for (int i = 0; i < 6; i++) {
+        state |= (uint64_t)bytes[5 - i] << (8 * i);
+    }
+    ESP_LOGI(TAG, "[MIDEA] state=0x%012llX (%s)",
+             (unsigned long long)state, ok ? "valid" : "invalid");
 }
 
 /* 分段解析：识别 Midea 双重帧（L + 48bit + S间隔 + L + 48bit），
@@ -142,7 +149,7 @@ static void ir_test_task(void *arg)
         .signal_range_max_ns = 12000000,
     };
 
-    ESP_LOGI(TAG, "红外学习模式启动：请将空调遥控器/手机红外App(美的)对准接收模块(GPIO%d)按按键",
+    ESP_LOGI(TAG, "红外监听模式启动：接收模块(GPIO%d)常开；发射时对准可回看，手机红外对着可捕获解析",
              IR_RX_GPIO);
 
     int cnt = 0;

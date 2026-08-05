@@ -25,6 +25,7 @@
 #include "cJSON.h"
 #include "driver/gpio.h"
 #include "ir_control.h"
+#include "ir_test.h"
 
 #define AC_WIFI_SSID       CONFIG_AC_WIFI_SSID
 #define AC_WIFI_PASS       CONFIG_AC_WIFI_PASSWORD
@@ -287,6 +288,7 @@ void app_main(void)
     app_build_identity();
     app_led_init();      /* 初始化电源指示灯 */
     ir_control_init();   /* 初始化红外发射通道 */
+    ir_test_start();     /* 红外监听：接收模块独立捕获解析（调试用） */
     wifi_init_sta();
 
     while (1) {
