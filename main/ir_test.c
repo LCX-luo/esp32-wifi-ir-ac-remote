@@ -20,7 +20,7 @@
 
 #define IR_RX_GPIO         GPIO_NUM_21
 #define RMT_RESOLUTION_HZ  1000000u   /* 1 tick = 1us */
-#define IR_RX_BUF_MAX      128        /* 空调帧可能含反码+双重发送，符号数较多 */
+#define IR_RX_BUF_MAX      256        /* Midea 双重帧约 100 符号，留余量防截断 */
 #define IR_RX_TIMEOUT_MS   3000
 
 static const char *TAG = "ir_test";
@@ -57,44 +57,58 @@ static void ir_print_raw(void)
     }
 }
 
-/* 按 Midea 时序猜测解析：
- * 符号[0] 视为引导码；其后每个符号 [mark~560us, space]，space>1000us=1 否则 0。
- * 输出 bit 串 + 按 8bit 分组 hex（先按 MSB-first 打印，供人工判断位序）。 */
-static void ir_midea_guess(void)
+/* 解析一段（引导码后到帧间隔前）的 48 bit 数据为 A/B/C，并做反码校验 */
+static void ir_parse_segment(int start, int end)
 {
     int nbits = 0;
-    char bits[IR_RX_BUF_MAX + 1] = {0};
-
-    for (int i = 1; i < (int)s_rx_num; i++) {
-        uint32_t sp = s_rx_buf[i].duration1;
-        if (sp < 300) {
-            break;   /* 尾部标记或分隔，结束 */
+    char bits[64] = {0};
+    for (int i = start + 1; i < end && nbits < 48; i++) {
+        if (s_rx_buf[i].duration1 < 300) {
+            break;
         }
-        bits[nbits++] = (sp > 1000) ? '1' : '0';
+        bits[nbits++] = (s_rx_buf[i].duration1 > 1000) ? '1' : '0';
     }
-    bits[nbits] = '\0';
-
-    if (nbits == 0) {
-        ESP_LOGW(TAG, "[GUESS] 无有效数据位（引导后没有数据符号？）");
+    if (nbits < 48) {
+        ESP_LOGW(TAG, "[MIDEA] 段数据不足(%d bit, 期望48)", nbits);
         return;
     }
 
-    ESP_LOGI(TAG, "[GUESS] 引导H=%u L=%u, 数据bit=%d: %s",
-             s_rx_buf[0].duration0, s_rx_buf[0].duration1, nbits, bits);
-
-    /* 按 8bit 一组打印 hex（MSB first） */
-    char hex_line[128] = {0};
-    size_t off = 0;
-    for (int i = 0; i + 8 <= nbits; i += 8) {
-        uint8_t b = 0;
+    /* 48 bit = 6 字节 [A,~A,B,~B,C,~C]，MSB first */
+    uint8_t bytes[6] = {0};
+    for (int i = 0; i < 6; i++) {
         for (int j = 0; j < 8; j++) {
-            if (bits[i + j] == '1') {
-                b |= (1u << (7 - j));
+            if (bits[i * 8 + j] == '1') {
+                bytes[i] |= (1u << (7 - j));
             }
         }
-        off += snprintf(hex_line + off, sizeof(hex_line) - off, "0x%02X ", b);
     }
-    ESP_LOGI(TAG, "[GUESS] hex: %s", hex_line);
+
+    bool ok = (bytes[1] == (uint8_t)~bytes[0]) &&
+              (bytes[3] == (uint8_t)~bytes[2]) &&
+              (bytes[5] == (uint8_t)~bytes[4]);
+    ESP_LOGI(TAG, "[MIDEA] A=0x%02X B=0x%02X C=0x%02X  反码校验:%s",
+             bytes[0], bytes[2], bytes[4], ok ? "OK" : "FAIL");
+}
+
+/* 分段解析：识别 Midea 双重帧（L + 48bit + S间隔 + L + 48bit），
+ * 以引导码(H>3000us)和帧间隔(L>2000us)分段，逐段提取 A/B/C */
+static void ir_midea_parse(void)
+{
+    ESP_LOGI(TAG, "[MIDEA] 分段解析:");
+    int seg_start = -1;
+    for (int i = 0; i < (int)s_rx_num; i++) {
+        bool is_gap = (s_rx_buf[i].duration1 > 2000);   /* 帧间隔(~5ms)或帧尾 */
+        if (seg_start >= 0 && is_gap) {
+            ir_parse_segment(seg_start, i);
+            seg_start = -1;
+        }
+        if (seg_start < 0 && !is_gap && s_rx_buf[i].duration0 > 3000) {
+            seg_start = i;   /* 引导码：H > 3000us */
+        }
+    }
+    if (seg_start >= 0) {
+        ir_parse_segment(seg_start, (int)s_rx_num);
+    }
 }
 
 static void ir_test_task(void *arg)
@@ -140,7 +154,7 @@ static void ir_test_task(void *arg)
             cnt++;
             ESP_LOGI(TAG, "===== 第 %d 次捕获 =====", cnt);
             ir_print_raw();
-            ir_midea_guess();
+            ir_midea_parse();
         }
 
         vTaskDelay(pdMS_TO_TICKS(300));
