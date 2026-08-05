@@ -24,6 +24,7 @@
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "driver/gpio.h"
+#include "ir_test.h"
 
 #define AC_WIFI_SSID       CONFIG_AC_WIFI_SSID
 #define AC_WIFI_PASS       CONFIG_AC_WIFI_PASSWORD
@@ -245,6 +246,7 @@ void app_main(void)
 
     app_build_identity();
     app_led_init();      /* 初始化电源指示灯 */
+    ir_test_start();     /* 红外收发模块测试（临时，验证后移除） */
     wifi_init_sta();
 
     while (1) {
