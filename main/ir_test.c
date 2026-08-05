@@ -57,6 +57,32 @@ static void ir_print_raw(void)
     }
 }
 
+/* 把 48bit state 解码为可读命令（电源/模式/风速/温度），供人眼对比 */
+static void ir_print_command(uint64_t state)
+{
+    uint8_t b3 = (state >> 24) & 0xFF;   /* Temp:5 + useFahrenheit:1 + :0 */
+    uint8_t b4 = (state >> 32) & 0xFF;   /* Mode:3 + Fan:2 + :1 + Sleep:1 + Power:1 */
+    uint8_t b5 = (state >> 40) & 0xFF;   /* Type:3 + Header:5 */
+
+    bool    power    = (b4 >> 7) & 1;
+    bool    sleep    = (b4 >> 6) & 1;
+    uint8_t fan      = (b4 >> 3) & 0x3;
+    uint8_t mode     = b4 & 0x7;
+    uint8_t temp_raw = b3 & 0x1F;
+    bool    useF     = (b3 >> 5) & 1;
+    int     temp     = useF ? (temp_raw + 62) : (temp_raw + 17);
+    uint8_t type     = b5 & 0x7;
+    uint8_t header   = (b5 >> 3) & 0x1F;
+
+    const char *mode_s = mode == 0 ? "制冷" : mode == 1 ? "除湿" : mode == 2 ? "自动" :
+                         mode == 3 ? "制热" : mode == 4 ? "送风" : "未知";
+    const char *fan_s  = fan == 0 ? "自动" : fan == 1 ? "低" : fan == 2 ? "中" : "高";
+
+    ESP_LOGI(TAG, "[CMD] 电源=%s 模式=%s(%d) 风速=%s(%d) 温度=%d%s 睡眠=%s Type=%d Header=%d",
+             power ? "开" : "关", mode_s, mode, fan_s, fan, temp, useF ? "F" : "C",
+             sleep ? "开" : "关", type, header);
+}
+
 /* 解析一段（引导码后到帧间隔前）的 48 bit 数据为 A/B/C，并做反码校验 */
 static void ir_parse_segment(int start, int end)
 {
@@ -95,6 +121,9 @@ static void ir_parse_segment(int start, int end)
     }
     ESP_LOGI(TAG, "[MIDEA] state=0x%012llX (%s)",
              (unsigned long long)state, ok ? "valid" : "invalid");
+    if (ok) {
+        ir_print_command(state);
+    }
 }
 
 /* 分段解析：识别 Midea 双重帧（L + 48bit + S间隔 + L + 48bit），
