@@ -126,20 +126,28 @@ static void ir_parse_segment(int start, int end)
     }
 }
 
-/* 分段解析：识别 Midea 双重帧（L + 48bit + S间隔 + L + 48bit），
- * 以引导码(H>3000us)和帧间隔(L>2000us)分段，逐段提取 A/B/C */
+/* 分段解析：识别 Midea 双重帧（L + 48bit + S间隔 + L + 48bit）。
+ * 引导码特征：H 长脉冲(>3000us)，且引导自身 L(~4480)也>2000 —— 因此
+ * 段起始只看 H，帧分隔看"数据符号之后出现的 L>2000"。 */
 static void ir_midea_parse(void)
 {
     ESP_LOGI(TAG, "[MIDEA] 分段解析:");
     int seg_start = -1;
     for (int i = 0; i < (int)s_rx_num; i++) {
-        bool is_gap = (s_rx_buf[i].duration1 > 2000);   /* 帧间隔(~5ms)或帧尾 */
-        if (seg_start >= 0 && is_gap) {
-            ir_parse_segment(seg_start, i);
-            seg_start = -1;
+        bool is_hdr = (s_rx_buf[i].duration0 > 3000);   /* 引导码：H 长脉冲 */
+        bool is_gap = (s_rx_buf[i].duration1 > 2000);   /* 长间隔：帧分隔/帧尾 */
+
+        if (seg_start >= 0) {
+            if (is_gap && i > seg_start + 1) {          /* 段内有数据后遇长间隔 → 段结束 */
+                ir_parse_segment(seg_start, i);
+                seg_start = -1;
+            } else if (is_hdr) {                        /* 新引导出现，收尾上一段 */
+                ir_parse_segment(seg_start, i);
+                seg_start = i;
+            }
         }
-        if (seg_start < 0 && !is_gap && s_rx_buf[i].duration0 > 3000) {
-            seg_start = i;   /* 引导码：H > 3000us */
+        if (seg_start < 0 && is_hdr) {
+            seg_start = i;
         }
     }
     if (seg_start >= 0) {
