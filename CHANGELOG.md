@@ -3,6 +3,16 @@
 本项目所有重要变更均记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [v0.1.6] - 2026-08-06
+
+### 新增
+- **Midea 红外控制模块** `ir_control.c/h`：编码 Midea 空调命令（电源/模式/风速/温度）为 48bit 帧（含校验和），RMT 38kHz 载波发射，`data + ~data` 双帧发送。
+- **命令执行升级**：`app_command_execute()` 收到 `on/off/temp/fan` 命令后构造 Midea 帧并红外发射（模式固定制冷）。
+- 网页遥控器：固定制冷模式，温度范围 17~30°C（与协议一致），保留电源/温度/风速控制。
+
+### 说明
+- 协议经 IRremoteESP8266 源码 + 遥控器实测双重确认：引导 4480/4480us、数据位 560/1680(1)/560(0)us、48bit 帧 `[Sum, SensorTemp, OffTimer, Temp+useF, Mode/Fan/Power, Type+Header]`、校验和为后 5 字节 reverse-bits 求和取补。
+
 ## [v0.1.5] - 2026-08-03
 
 ### 新增

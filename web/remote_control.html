@@ -100,14 +100,8 @@
   </div>
 
   <div class="card">
-    <h2>模式</h2>
-    <div class="grid" id="mode-grid">
-      <button data-v="auto">自动</button>
-      <button data-v="cool">制冷</button>
-      <button data-v="heat">制热</button>
-      <button data-v="dry">除湿</button>
-      <button data-v="fan">送风</button>
-    </div>
+    <h2>模式 <span style="float:right;color:#2b7fff;font-weight:700">制冷</span></h2>
+    <div style="font-size:12px;color:#8aa7c8">当前固定制冷模式，更多模式将在后续版本开放</div>
   </div>
 
   <div class="card">
@@ -159,7 +153,7 @@ let connected = false;
 let powerOn = false;
 let temp = 26;
 let s_devId = DEFAULT_DEVICE;
-const MIN_T = 16, MAX_T = 30;
+const MIN_T = 17, MAX_T = 30;   /* 与 Midea 协议温度范围一致 */
 const $ = id => document.getElementById(id);
 
 /* ================= MQTT 连接 ================= */
@@ -252,15 +246,7 @@ function tempStep(d) {
   publish({ cmd: 'temp', temp: temp });
 }
 
-/* ================= 模式 / 风速 ================= */
-document.querySelectorAll('#mode-grid button').forEach(b => {
-  b.addEventListener('click', () => {
-    console.log('[BTN] 模式点击:', b.dataset.v);
-    document.querySelectorAll('#mode-grid button').forEach(x => x.classList.remove('sel'));
-    b.classList.add('sel');
-    publish({ cmd: 'mode', mode: b.dataset.v });
-  });
-});
+/* ================= 风速 ================= */
 document.querySelectorAll('#fan-grid button').forEach(b => {
   b.addEventListener('click', () => {
     console.log('[BTN] 风速点击:', b.dataset.v);

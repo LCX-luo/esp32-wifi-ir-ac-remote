@@ -14,3 +14,7 @@ dependencies.lock
 # ---- Python ----
 __pycache__/
 *.pyc
+
+# ---- IRremoteESP8266 参考源码（第三方，非本项目代码） ----
+src1.cpp
+src2.cpp

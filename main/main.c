@@ -5,8 +5,8 @@
  *   1. STA 模式连接路由器（WiFi 参数在 menuconfig 中配置）
  *   2. 连接 MQTT broker（默认公共免费服务器 broker.emqx.io）
  *   3. 用 MAC 地址后 3 字节生成唯一设备 ID，订阅 {prefix}/{id}/cmd 收命令
- *   4. 收到 JSON 命令 → 解析 → app_command_execute() 执行（当前仅打印，
- *      红外模块到位后在此接入）
+ *   4. 收到 JSON 命令 → 解析 → app_command_execute() 执行
+ *      （on/off/temp/fan → 构造 Midea 红外命令并发射，模式固定制冷）
  *
  * 配置方式（VSCode）：
  *   Ctrl+E, O  打开 menuconfig → "AC Remote Configuration" 填写 WiFi/MQTT
@@ -24,7 +24,7 @@
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "driver/gpio.h"
-#include "ir_test.h"
+#include "ir_control.h"
 
 #define AC_WIFI_SSID       CONFIG_AC_WIFI_SSID
 #define AC_WIFI_PASS       CONFIG_AC_WIFI_PASSWORD
@@ -83,12 +83,32 @@ static void app_led_set(bool on)
              on ? "ON" : "OFF", AC_LED_GPIO, on ? 1 : 0);
 }
 
-/* ==================== 命令执行 ==================== */
+/* ==================== 空调状态与命令执行 ==================== */
+
+/* 当前空调状态（默认制冷、自动风速、26°C、关机） */
+static struct {
+    bool    power;
+    uint8_t mode;
+    uint8_t fan;
+    uint8_t temp;
+} s_ac = {
+    .power = false,
+    .mode  = MIDEA_MODE_COOL,
+    .fan   = MIDEA_FAN_AUTO,
+    .temp  = 26,
+};
+
+/* 按当前状态发射红外命令，并同步 LED 指示 */
+static void app_ac_send(void)
+{
+    ir_control_send(s_ac.power, s_ac.mode, s_ac.fan, s_ac.temp);
+    app_led_set(s_ac.power);
+}
 
 /**
  * 命令分发入口：解析后的 JSON 命令在此执行。
- * 当前阶段：on/off 绑定电源指示灯 GPIO（LED 正极接 AC_LED_GPIO）。
- * TODO(红外模块): 将 cmd 映射为空调红外码并发射，替换/叠加到 LED 控制。
+ * 支持命令：on/off（开关）、temp（温度 17~30）、fan（风速 auto/low/mid/high）。
+ * 模式固定制冷（s_ac.mode = MIDEA_MODE_COOL）。
  */
 static void app_command_execute(const cJSON *root)
 {
@@ -101,15 +121,35 @@ static void app_command_execute(const cJSON *root)
     ESP_LOGI(TAG, "[EXEC] >>> executing command: %s", cmd->valuestring);
 
     if (!strcmp(cmd->valuestring, "on")) {
-        app_led_set(true);
-        /* TODO(红外): ir_send(IR_POWER); */
+        s_ac.power = true;
+        app_ac_send();
     } else if (!strcmp(cmd->valuestring, "off")) {
-        app_led_set(false);
-        /* TODO(红外): ir_send(IR_POWER); */
+        s_ac.power = false;
+        app_ac_send();
+    } else if (!strcmp(cmd->valuestring, "temp")) {
+        const cJSON *t = cJSON_GetObjectItem(root, "temp");
+        if (t != NULL && cJSON_IsNumber(t)) {
+            int v = (int)t->valueint;
+            s_ac.temp = (uint8_t)(v < MIDEA_TEMP_MIN ? MIDEA_TEMP_MIN :
+                                  (v > MIDEA_TEMP_MAX ? MIDEA_TEMP_MAX : v));
+            app_ac_send();
+        } else {
+            ESP_LOGW(TAG, "[EXEC] temp 缺少数值");
+        }
+    } else if (!strcmp(cmd->valuestring, "fan")) {
+        const cJSON *f = cJSON_GetObjectItem(root, "fan");
+        if (f != NULL && cJSON_IsString(f)) {
+            if      (!strcmp(f->valuestring, "auto")) s_ac.fan = MIDEA_FAN_AUTO;
+            else if (!strcmp(f->valuestring, "low"))  s_ac.fan = MIDEA_FAN_LOW;
+            else if (!strcmp(f->valuestring, "mid"))  s_ac.fan = MIDEA_FAN_MED;
+            else if (!strcmp(f->valuestring, "high")) s_ac.fan = MIDEA_FAN_HIGH;
+            else ESP_LOGW(TAG, "[EXEC] 未知风速: %s", f->valuestring);
+            app_ac_send();
+        } else {
+            ESP_LOGW(TAG, "[EXEC] fan 缺少字符串");
+        }
     } else {
-        /* mode/temp/fan 等参数后续红外模块使用时再解析执行 */
-        ESP_LOGI(TAG, "[EXEC] command ignored (IR module not ready yet): %s",
-                 cmd->valuestring);
+        ESP_LOGW(TAG, "[EXEC] 未支持命令: %s", cmd->valuestring);
     }
 }
 
@@ -246,7 +286,7 @@ void app_main(void)
 
     app_build_identity();
     app_led_init();      /* 初始化电源指示灯 */
-    ir_test_start();     /* 红外收发模块测试（临时，验证后移除） */
+    ir_control_init();   /* 初始化红外发射通道 */
     wifi_init_sta();
 
     while (1) {
