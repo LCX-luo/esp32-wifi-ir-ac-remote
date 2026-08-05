@@ -76,6 +76,7 @@ static void ir_test_task(void *arg)
         .duty_cycle = 0.33,
     };
     ESP_ERROR_CHECK(rmt_apply_carrier(tx_chan, &carrier));
+    ESP_ERROR_CHECK(rmt_enable(tx_chan));   /* TX 通道必须先 enable 才能 transmit */
 
     rmt_encoder_handle_t copy_enc = NULL;
     ESP_ERROR_CHECK(rmt_new_copy_encoder(&(rmt_copy_encoder_config_t){0}, &copy_enc));

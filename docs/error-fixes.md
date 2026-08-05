@@ -101,3 +101,10 @@
   2. 若 DAT 为**开漏输出**（常见），将 ESP32 GPIO 配为输入 + 内部上拉到 3.3V，无需外部元件；
   3. 仅当 DAT 为推挽 5V 输出时才需**电阻分压**（DAT→2.2kΩ→GPIO，GPIO→3.3kΩ→GND，约 3V）。
 - **不可靠做法**：串联普通二极管降压——GPIO 高阻输入下二极管几乎无电流、无压降，且单管 0.7V 降压不足，无法保护。
+
+### 问题 9：RMT TX 通道未 enable 就 transmit，导致 abort（ESP_ERR_INVALID_STATE）
+
+- **现象**：红外测试任务启动即 `abort`，日志 `E rmt: rmt_transmit(476): channel not in enable state`，`ESP_ERROR_CHECK failed: 0x103 (ESP_ERR_INVALID_STATE)`，栈指向 ir_test.c 中 `rmt_transmit()` 一行。
+- **根因**：RMT 新驱动（ESP-IDF v5.x）要求 TX/RX 通道在收发前都必须显式 `rmt_enable()`；代码只 enable 了 RX 通道，TX 通道漏调 enable 便直接 transmit。
+- **解决**：在 `rmt_apply_carrier()` 之后补 `ESP_ERROR_CHECK(rmt_enable(tx_chan));`。
+- **经验**：RMT v5 新驱动中 `rmt_enable()/rmt_disable()` 是显式通道开关，TX/RX 都要调用；报 `channel not in enable state` 时先检查是否忘了 enable。

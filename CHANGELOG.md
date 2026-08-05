@@ -9,6 +9,9 @@
 - **红外收发模块测试** `main/ir_test.c`：RMT 外设产生 38kHz 载波发射测试帧（HX-53 发射 @GPIO22），RMT RX 捕获脉冲时序（HX-M121 接收 @GPIO21），验证两块模块是否正常。
 - 接线：发射 DAT→GPIO22、接收 DAT→GPIO21，模块 VIN(5V) 供电共地。
 
+### 修复
+- RMT TX 通道漏调 `rmt_enable()` 导致 `ESP_ERR_INVALID_STATE` abort，补 enable 后正常（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 9）。
+
 ### 注意
 - 接收模块 DAT 输出电平可能为 5V，**不得直连 ESP32 GPIO**（最大 3.6V）；需先测量实际电平，必要时分压/开漏上拉（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 8）。
 
