@@ -109,3 +109,10 @@
 - **根因**：RMT 新驱动（ESP-IDF v5.x）要求 TX/RX 通道在收发前都必须显式 `rmt_enable()`；代码只 enable 了 RX 通道，TX 通道漏调 enable 便直接 transmit。
 - **解决**：在 `rmt_apply_carrier()` 之后补 `ESP_ERROR_CHECK(rmt_enable(tx_chan));`。
 - **经验**：RMT v5 新驱动中 `rmt_enable()/rmt_disable()` 是显式通道开关，TX/RX 都要调用；报 `channel not in enable state` 时先检查是否忘了 enable。
+
+### 问题 10：发射帧末位低电平被 RMT RX 截断，导致末位丢失（解码 MISMATCH）
+
+- **现象**：发射 `0xA5`(8bit)，接收解码得 `0x25`——最后一位(bit7=1)错误。日志 RX 最后一个符号为 `HIGH=577 LOW=0`，而发射应为 `560/1690`。
+- **根因**：帧的最后一个符号是低电平结尾，之后无新边沿；RMT RX 将「超过 `signal_range_max` 的长低电平」当作空闲超时，把最后一个 symbol 的 `duration1` 截断为 0，末位数据丢失。
+- **解决**：发射帧末尾追加"结束符号"(560/0)，为最后一段低电平提供一个高边沿使其被完整捕获；解码仍取引导码后的前 8 个符号。
+- **经验**：RMT RX 以「超时无新边沿」结束接收，发射帧尾部必须有电平跳变；NEC 类协议常依赖帧尾 stop 位/结束符号保证末位完整。

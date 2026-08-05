@@ -13,6 +13,8 @@
 
 ### 修复
 - RMT TX 通道漏调 `rmt_enable()` 导致 `ESP_ERR_INVALID_STATE` abort，补 enable 后正常（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 9）。
+- **帧尾末位低电平被 RMT RX 截断**导致最后一位丢失（解码 0x25≠0xA5）：发射帧末尾追加"结束符号"(560/0) 提供高边沿，末位完整捕获（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 10）。
+- 测试输出升级为**分阶段诊断**：未收到信号 / 帧不完整 / 杂音过多 / 数据不一致分别提示，并同时打印 [TX]/[RX] 符号序列供人眼对比定位。
 
 ### 注意
 - 接收模块 DAT 输出电平可能为 5V，**不得直连 ESP32 GPIO**（最大 3.6V）；需先测量实际电平，必要时分压/开漏上拉（详见 [docs/error-fixes.md](docs/error-fixes.md) 问题 8）。

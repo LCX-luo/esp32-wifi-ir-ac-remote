@@ -65,7 +65,7 @@ static bool IRAM_ATTR ir_rx_done_cb(rmt_channel_handle_t chan,
     return high_task_woken == pdTRUE;
 }
 
-/* 从引导码后的符号解码 8 bit（LSB first）：低电平时长 <1000us 视为 0，否则 1 */
+/* 从引导码后的符号解码 8 bit（LSB first）：低电平时长 >1000us 视为 1，否则 0 */
 static uint8_t ir_decode_data(void)
 {
     uint8_t val = 0;
@@ -104,8 +104,11 @@ static void ir_test_task(void *arg)
     rmt_encoder_handle_t copy_enc = NULL;
     ESP_ERROR_CHECK(rmt_new_copy_encoder(&(rmt_copy_encoder_config_t){0}, &copy_enc));
 
-    /* 测试帧：NEC 引导码 + 8bit 数据（LSB first），bit0 发射最低位 */
-    rmt_symbol_word_t tx_syms[1 + 8];
+    /* 测试帧：NEC 引导码 + 8bit 数据(LSB first) + 结束符号(560/0)
+     * 结束符号的作用：让最后一段数据位的低电平后面紧跟一个高边沿，
+     * 否则 RMT RX 会把帧尾长低电平当成"空闲超时"截断（LOW=0），丢失最后一位。 */
+    #define TX_SYM_NUM  (1 + 8 + 1)
+    rmt_symbol_word_t tx_syms[TX_SYM_NUM];
     tx_syms[0] = (rmt_symbol_word_t){
         .level0 = 1, .duration0 = 9000,
         .level1 = 0, .duration1 = 4500,
@@ -117,6 +120,10 @@ static void ir_test_task(void *arg)
             .level1 = 0, .duration1 = bit ? 1690 : 560,
         };
     }
+    tx_syms[TX_SYM_NUM - 1] = (rmt_symbol_word_t){
+        .level0 = 1, .duration0 = 560,
+        .level1 = 0, .duration1 = 0,
+    };
     rmt_transmit_config_t tx_conf = { .loop_count = 0 };
 
     /* ---- 接收通道 ---- */
@@ -165,19 +172,38 @@ static void ir_test_task(void *arg)
         ESP_ERROR_CHECK(rmt_transmit(tx_chan, copy_enc, tx_syms, sizeof(tx_syms), &tx_conf));
         ESP_ERROR_CHECK(rmt_tx_wait_all_done(tx_chan, 1000));
 
-        /* 等待接收结果 */
-        if (xQueueReceive(s_ir_queue, &evt, pdMS_TO_TICKS(IR_RX_TIMEOUT_MS)) == pdTRUE) {
-            uint8_t got = ir_decode_data();
-            ESP_LOGI(TAG, "RX #%d: %d symbols, decoded=0x%02X expect=0x%02X -> %s",
-                     cnt, (int)s_rx_num, got, IR_TX_DATA,
-                     (got == IR_TX_DATA) ? "MATCH" : "MISMATCH");
+        /* 同时打印发射帧（便于人眼对比） */
+        ESP_LOGI(TAG, "[TX] #%d frame (%d syms):", cnt, TX_SYM_NUM);
+        for (int i = 0; i < TX_SYM_NUM; i++) {
+            ESP_LOGI(TAG, "  [%02d] %u/%u", i,
+                     tx_syms[i].duration0, tx_syms[i].duration1);
+        }
+
+        /* 等待接收结果，按阶段诊断 */
+        if (xQueueReceive(s_ir_queue, &evt, pdMS_TO_TICKS(IR_RX_TIMEOUT_MS)) != pdTRUE) {
+            ESP_LOGW(TAG, "[DIAG] 未收到信号：检查发射/接收模块是否对准、供电、DAT 接线");
+        } else {
+            ESP_LOGI(TAG, "[RX] #%d got %d syms:", cnt, (int)s_rx_num);
             for (int i = 0; i < (int)s_rx_num; i++) {
-                ESP_LOGI(TAG, "  [%02d] HIGH=%u us  LOW=%u us",
+                ESP_LOGI(TAG, "  [%02d] %u/%u",
                          i, s_rx_buf[i].duration0, s_rx_buf[i].duration1);
             }
-        } else {
-            ESP_LOGW(TAG, "RX #%d: no signal within %dms (check alignment/wiring)",
-                     cnt, IR_RX_TIMEOUT_MS);
+
+            if (s_rx_num < 1 + 8) {
+                ESP_LOGW(TAG, "[DIAG] 帧不完整(仅 %d 个符号)：信号弱/距离太远/被截断",
+                         (int)s_rx_num);
+            } else if (s_rx_num > TX_SYM_NUM + 3) {
+                ESP_LOGW(TAG, "[DIAG] 符号数异常(%d) 疑似杂音过多：环境红外干扰/自串扰/对准不佳",
+                         (int)s_rx_num);
+            } else {
+                uint8_t got = ir_decode_data();
+                bool match = (got == IR_TX_DATA);
+                ESP_LOGI(TAG, "[RESULT] decoded=0x%02X expect=0x%02X -> %s",
+                         got, IR_TX_DATA, match ? "MATCH" : "MISMATCH");
+                if (!match) {
+                    ESP_LOGW(TAG, "[DIAG] 数据不一致：请对比上方 [TX] 与 [RX] 符号序列定位差异位");
+                }
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));
