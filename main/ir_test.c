@@ -1,18 +1,23 @@
 /**
- * 红外收发模块测试（临时）
+ * 红外收发模块数据传输测试（临时）
  *
  * 硬件连接：
  *   - 发射模块 HX-53   DAT -> GPIO22（ESP32 输出，RMT TX）
- *   - 接收模块 HX-M121 DAT -> GPIO21（注意需分压：5V -> 3.3V，勿直连！）
+ *   - 接收模块 HX-M121 DAT -> GPIO21（注意：DAT 输出 5V！见下方适配说明）
  *   - 两模块共用 VIN(5V) 与 GND
  *
- * 工作原理（回答"能否同时收发 / 用 DMA"问题）：
- *   RMT TX 硬件自动产生 38kHz 载波 + 脉冲序列，CPU 只准备数据；
- *   RMT RX 硬件自动捕获边沿时序（底层 DMA），CPU 只在收完一帧后的回调里解析。
- *   "学习"(只收) 与 "回放"(只发) 本就分时，无需同时收发。
+ * 5V 输入适配说明：
+ *   - ESP32 GPIO 最大输入 3.6V，5V 属物理超压，纯软件无法完全消除风险；
+ *   - 本代码将 GPIO21 配置为"输入 + 内部下拉"：对开漏型接收头可将空闲 5V
+ *     分压降低（较安全）；若模块为推挽 5V 输出，内部下拉无效仍有风险；
+ *   - 强烈建议串接红色 LED：DAT -> LED阳极 -> LED阴极 -> GPIO21，
+ *     利用 LED ~1.8V 压降使 GPIO 端约 3.2V，最稳妥。
  *
- * 测试流程：每约 2 秒发射一帧 NEC 引导码测试信号，同时 RMT RX 持续监听；
- *   将发射模块对准接收模块（<30cm），串口应打印捕获到的脉冲时序。
+ * 测试内容：每 2 秒发射一帧「引导码 + 8bit 数据(0xA5)」，RMT RX 捕获后
+ *   解码成字节并与发射数据比对，打印 MATCH / MISMATCH，验证数据传输可行性。
+ *
+ * RMT 原理：TX 硬件自动产生 38kHz 载波+脉冲；RX 硬件自动捕获时序(DMA)，
+ *   CPU 仅在收完一帧后的回调里解析。学习(只收)/回放(只发)本就分时，无需同时收发。
  */
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +26,7 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_attr.h"
+#include "driver/gpio.h"
 #include "driver/rmt_tx.h"
 #include "driver/rmt_rx.h"
 #include "driver/rmt_types.h"
@@ -32,6 +38,8 @@
 #define RMT_RESOLUTION_HZ  1000000u   /* 1 tick = 1us，duration 单位即 us */
 #define IR_RX_BUF_MAX      64         /* 最多捕获 64 个符号 */
 #define IR_RX_TIMEOUT_MS   4000
+
+#define IR_TX_DATA         0xA5       /* 测试数据字节：1010 0101 (LSB first) */
 
 static const char *TAG = "ir_test";
 
@@ -55,6 +63,21 @@ static bool IRAM_ATTR ir_rx_done_cb(rmt_channel_handle_t chan,
     uint32_t evt = 1;
     xQueueSendFromISR(s_ir_queue, &evt, &high_task_woken);
     return high_task_woken == pdTRUE;
+}
+
+/* 从引导码后的符号解码 8 bit（LSB first）：低电平时长 <1000us 视为 0，否则 1 */
+static uint8_t ir_decode_data(void)
+{
+    uint8_t val = 0;
+    if (s_rx_num < 1 + 8) {
+        return 0xFF;   /* 数据不足 */
+    }
+    for (int i = 0; i < 8; i++) {
+        if (s_rx_buf[1 + i].duration1 > 1000) {
+            val |= (1u << i);
+        }
+    }
+    return val;
 }
 
 static void ir_test_task(void *arg)
@@ -81,16 +104,20 @@ static void ir_test_task(void *arg)
     rmt_encoder_handle_t copy_enc = NULL;
     ESP_ERROR_CHECK(rmt_new_copy_encoder(&(rmt_copy_encoder_config_t){0}, &copy_enc));
 
-    /* 测试帧：NEC 引导码 + 几个数据位（任意时序，仅用于验证链路） */
-    rmt_symbol_word_t tx_syms[] = {
-        { .level0 = 1, .duration0 = 9000, .level1 = 0, .duration1 = 4500 },
-        { .level0 = 1, .duration0 = 560,  .level1 = 0, .duration1 = 560 },
-        { .level0 = 1, .duration0 = 560,  .level1 = 0, .duration1 = 1690 },
-        { .level0 = 1, .duration0 = 560,  .level1 = 0, .duration1 = 560 },
+    /* 测试帧：NEC 引导码 + 8bit 数据（LSB first），bit0 发射最低位 */
+    rmt_symbol_word_t tx_syms[1 + 8];
+    tx_syms[0] = (rmt_symbol_word_t){
+        .level0 = 1, .duration0 = 9000,
+        .level1 = 0, .duration1 = 4500,
     };
-    rmt_transmit_config_t tx_conf = {
-        .loop_count = 0,
-    };
+    for (int i = 0; i < 8; i++) {
+        int bit = (IR_TX_DATA >> i) & 1;
+        tx_syms[1 + i] = (rmt_symbol_word_t){
+            .level0 = 1, .duration0 = 560,
+            .level1 = 0, .duration1 = bit ? 1690 : 560,
+        };
+    }
+    rmt_transmit_config_t tx_conf = { .loop_count = 0 };
 
     /* ---- 接收通道 ---- */
     rmt_rx_channel_config_t rx_cfg = {
@@ -103,6 +130,17 @@ static void ir_test_task(void *arg)
     ESP_ERROR_CHECK(rmt_new_rx_channel(&rx_cfg, &rx_chan));
     ESP_ERROR_CHECK(rmt_enable(rx_chan));
 
+    /* 适配 5V DAT：GPIO 输入 + 内部下拉（对开漏型接收头分压降低空闲电平）。
+     * 若为推挽 5V 输出，建议串接红色 LED 限压后再接本引脚。 */
+    gpio_config_t rx_io = {
+        .pin_bit_mask = (1ULL << IR_RX_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&rx_io));
+
     s_ir_queue = xQueueCreate(8, sizeof(uint32_t));
     rmt_rx_event_callbacks_t rx_cbs = { .on_recv_done = ir_rx_done_cb };
     ESP_ERROR_CHECK(rmt_rx_register_event_callbacks(rx_chan, &rx_cbs, NULL));
@@ -112,9 +150,9 @@ static void ir_test_task(void *arg)
         .signal_range_max_ns = 12000000, /* 空闲 >12ms 认为一帧结束 */
     };
 
-    ESP_LOGI(TAG, "IR test started: TX=GPIO%d RX=GPIO%d, carrier=%uHz",
-             IR_TX_GPIO, IR_RX_GPIO, IR_CARRIER_HZ);
-    ESP_LOGI(TAG, "请将发射模块对准接收模块(<30cm)，并观察发射模块板载LED");
+    ESP_LOGI(TAG, "IR data test: TX=GPIO%d RX=GPIO%d carrier=%uHz, data=0x%02X",
+             IR_TX_GPIO, IR_RX_GPIO, IR_CARRIER_HZ, IR_TX_DATA);
+    ESP_LOGI(TAG, "发射模块对准接收模块(<30cm)，观察是否 MATCH");
 
     int cnt = 0;
     uint32_t evt;
@@ -122,15 +160,17 @@ static void ir_test_task(void *arg)
         /* 重新开启接收 */
         ESP_ERROR_CHECK(rmt_receive(rx_chan, s_rx_buf, sizeof(s_rx_buf), &rx_recv_cfg));
 
-        /* 发射一帧测试信号 */
+        /* 发射一帧 */
         cnt++;
-        ESP_LOGI(TAG, "TX #%d: sending test frame...", cnt);
         ESP_ERROR_CHECK(rmt_transmit(tx_chan, copy_enc, tx_syms, sizeof(tx_syms), &tx_conf));
         ESP_ERROR_CHECK(rmt_tx_wait_all_done(tx_chan, 1000));
 
         /* 等待接收结果 */
         if (xQueueReceive(s_ir_queue, &evt, pdMS_TO_TICKS(IR_RX_TIMEOUT_MS)) == pdTRUE) {
-            ESP_LOGI(TAG, "RX #%d: captured %d symbols:", cnt, (int)s_rx_num);
+            uint8_t got = ir_decode_data();
+            ESP_LOGI(TAG, "RX #%d: %d symbols, decoded=0x%02X expect=0x%02X -> %s",
+                     cnt, (int)s_rx_num, got, IR_TX_DATA,
+                     (got == IR_TX_DATA) ? "MATCH" : "MISMATCH");
             for (int i = 0; i < (int)s_rx_num; i++) {
                 ESP_LOGI(TAG, "  [%02d] HIGH=%u us  LOW=%u us",
                          i, s_rx_buf[i].duration0, s_rx_buf[i].duration1);
