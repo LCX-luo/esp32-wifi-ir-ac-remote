@@ -1,17 +1,16 @@
 /**
  * 美的(Midea)空调红外控制 —— 编码 + RMT 发射
  *
- * 48bit 状态布局（字节 0 为最低字节，校验和除外，见注释）：
- *   byte0 = Sum       校验和
- *   byte1 = SensorTemp:7 | disableSensor:1      （禁用：0xFF）
- *   byte2 = :1 | OffTimer:6 | BeepDisable:1     （关：0xFF）
- *   byte3 = Temp:5 | useFahrenheit:1 | :0       （Celsius: useFahrenheit=0）
- *   byte4 = Mode:3 | Fan:2 | :1 | Sleep:1 | Power:1
- *   byte5 = Type:3 | Header:5                   （Type=Command(1), Header=0b10100）
- *
- * 发送时序（IRremoteESP8266 sendMidea）：
- *   [引导 4480/4480] + 48bit(byte5..byte0, MSB-first) + [尾部 560/5600]
- *   然后 data=~data 再发一次相同结构（双重），帧末大间隔。
+ * 协议（经手机实测 + 开源资料确认）：
+ *   引导 4480/4480us；数据位 mark 560us + space(1=1680us / 0=560us)。
+ *   48bit 帧 = [A, ~A, B, ~B, C, ~C]（每字节带反码），发送两次相同帧。
+ *   - A = 0xB2 固定用户码
+ *   - B = 功能字节（风速）：B = 风速码<<5 | 0x1F
+ *         Auto=0xBF, Low=0x9F, Med=0x5F, High=0x3F
+ *   - C = 模式/温度：C = 温度编码 & 模式码
+ *         温度编码 temp_code = (温度+1)*8 + 7（26°C→0xDF, 24°C→0xCF）
+ *         模式码：制冷=0xF0，C = temp_code & 0xF0
+ *   - 关机特殊命令：B=0x7B, C=0xE0（开源资料）
  */
 #include <stdio.h>
 #include "esp_log.h"
@@ -23,7 +22,7 @@
 #define RMT_RESOLUTION_HZ  1000000u   /* 1 tick = 1us */
 #define IR_CARRIER_HZ      38000u
 
-/* Midea 时序（tick=80us 换算） */
+/* Midea 时序 */
 #define MHDR_MARK          4480
 #define MHDR_SPACE         4480
 #define MBIT_MARK          560
@@ -31,54 +30,44 @@
 #define MZERO_SPACE        560
 #define MFOOTER_GAP        5600
 
-#define MIDA_HEADER        (0b10100)  /* 固定头部 */
-#define MIDA_TYPE_COMMAND  (0b001)
-
-/* 每帧符号数：引导 + 48bit + 尾部；双帧 */
+/* 每帧符号数：引导 + 48bit + 尾部；两帧 */
 #define FRAME_SYMS         (1 + 48 + 1)
 #define SYM_MAX            (2 * FRAME_SYMS)
 
+#define MIDEA_USER_CODE    0xB2
+#define MIDEA_POWER_OFF_B  0x7B
+#define MIDEA_POWER_OFF_C  0xE0
+#define MIDEA_MODE_CODE_COOL  0xF0
+
+/* 风速码（对应 MIDEA_FAN_AUTO/LOW/MED/HIGH） */
+static const uint8_t s_fan_code[4] = { 5, 4, 2, 1 };
+
 static const char *TAG = "ir_control";
+static rmt_channel_handle_t s_tx_chan;
+static rmt_encoder_handle_t s_tx_enc;
 
-static rmt_channel_handle_t  s_tx_chan;
-static rmt_encoder_handle_t  s_tx_enc;
-
-static uint8_t reverse_bits(uint8_t v)
-{
-    uint8_t r = 0;
-    for (int i = 0; i < 8; i++) {
-        r = (uint8_t)((r << 1) | (v & 1));
-        v >>= 1;
-    }
-    return r;
-}
-
-/* 由 power/mode/fan/temp 编码 48bit 状态 */
+/* 生成 48bit 状态：[A,~A,B,~B,C,~C]，A 为最高字节（最先发送） */
 static uint64_t midea_encode(bool power, uint8_t mode, uint8_t fan, uint8_t temp)
 {
-    uint8_t b[6] = {0};
-    b[1] = 0xFF;                                   /* SensorTemp 禁用 */
-    b[2] = 0xFF;                                   /* OffTimer 关 */
-    b[3] = (uint8_t)((temp - MIDEA_TEMP_MIN) & 0x1F);  /* Celsius */
-    b[4] = (uint8_t)((power ? 0x80 : 0) | ((fan & 0x3) << 3) | (mode & 0x7));
-    b[5] = (uint8_t)((MIDA_HEADER << 3) | MIDA_TYPE_COMMAND);
+    uint8_t A = MIDEA_USER_CODE;
+    uint8_t B, C;
 
-    /* 校验和：后 5 字节 reverse-bits 求和，256-sum 后 reverse-bits */
-    uint8_t sum = 0;
-    for (int i = 5; i >= 1; i--) {
-        sum = (uint8_t)(sum + reverse_bits(b[i]));
+    if (!power) {
+        B = MIDEA_POWER_OFF_B;
+        C = MIDEA_POWER_OFF_C;
+    } else {
+        B = (uint8_t)((s_fan_code[fan & 3] << 5) | 0x1F);
+        uint8_t temp_code = (uint8_t)(((temp + 1) << 3) | 0x07);
+        uint8_t mode_code = MIDEA_MODE_CODE_COOL;   /* 当前固定制冷 */
+        C = (uint8_t)(temp_code & mode_code);
     }
-    sum = (uint8_t)(256 - sum);
-    b[0] = reverse_bits(sum);
 
-    uint64_t state = 0;
-    for (int i = 0; i < 6; i++) {
-        state |= (uint64_t)b[i] << (8 * i);
-    }
-    return state;
+    return ((uint64_t)A << 40) | ((uint64_t)(uint8_t)~A << 32)
+         | ((uint64_t)B << 24) | ((uint64_t)(uint8_t)~B << 16)
+         | ((uint64_t)C << 8)  | ((uint64_t)(uint8_t)~C);
 }
 
-/* 把一帧（data 的 48bit）转成 RMT 符号：引导 + 48bit(MSB-first) + 尾部 */
+/* 构建一帧符号：引导 + 48bit(MSB-first) + 尾部 */
 static int midea_build_frame(uint64_t data, rmt_symbol_word_t *sym)
 {
     int n = 0;
@@ -86,7 +75,6 @@ static int midea_build_frame(uint64_t data, rmt_symbol_word_t *sym)
         .level0 = 1, .duration0 = MHDR_MARK,
         .level1 = 0, .duration1 = MHDR_SPACE,
     };
-    /* 从最高字节到最低字节，每字节 MSB-first */
     for (int i = 8; i <= 48; i += 8) {
         uint8_t seg = (uint8_t)((data >> (48 - i)) & 0xFF);
         for (int j = 7; j >= 0; j--) {
@@ -137,13 +125,13 @@ void ir_control_send(bool power, uint8_t mode, uint8_t fan, uint8_t temp)
 
     rmt_symbol_word_t syms[SYM_MAX];
     int n = midea_build_frame(data, syms);
-    n += midea_build_frame(~data, syms + n);
+    n += midea_build_frame(data, syms + n);   /* 两帧相同（手机实测格式） */
 
     rmt_transmit_config_t tx_conf = { .loop_count = 0 };
     ESP_ERROR_CHECK(rmt_transmit(s_tx_chan, s_tx_enc, syms,
                                  n * sizeof(rmt_symbol_word_t), &tx_conf));
     ESP_ERROR_CHECK(rmt_tx_wait_all_done(s_tx_chan, 2000));
 
-    ESP_LOGI(TAG, "IR send: power=%d mode=%d fan=%d temp=%d (0x%012llX, %d syms)",
-             power, mode, fan, temp, (unsigned long long)data, n);
+    ESP_LOGI(TAG, "IR send: power=%d fan=%d temp=%d (0x%012llX)",
+             power, fan, temp, (unsigned long long)data);
 }
