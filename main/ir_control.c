@@ -46,30 +46,20 @@ static const char *TAG = "ir_control";
 static rmt_channel_handle_t s_tx_chan;
 static rmt_encoder_handle_t s_tx_enc;
 
-/* 模式 → C 字节低 3 位（由 mode_code 与 temp_code 相与推导：制冷0/自动8/除湿4/制热12） */
-static uint8_t mode_to_bits(uint8_t mode)
-{
-    switch (mode) {
-    case MIDEA_MODE_COOL: return 0x00;
-    case MIDEA_MODE_AUTO: return 0x08;
-    case MIDEA_MODE_DRY:  return 0x04;
-    case MIDEA_MODE_HEAT: return 0x0C;
-    default:              return 0x00;
-    }
-}
-
-/* 生成 48bit 状态：[A,~A,B,~B,C,~C]，A 为最高字节（最先发送） */
+/* 生成 48bit 状态：[A,~A,B,~B,C,~C]，A 为最高字节（最先发送）。
+ * 注：模式编码尚未确认（推测的模式位会导致空调异常），当前固定制冷。 */
 static uint64_t midea_encode(bool power, uint8_t mode, uint8_t fan, uint8_t temp)
 {
     uint8_t A = MIDEA_USER_CODE;
     uint8_t B, C;
 
+    (void)mode;   /* 模式编码待手机样本校准后再启用 */
     if (!power) {
         B = MIDEA_POWER_OFF_B;
         C = MIDEA_POWER_OFF_C;
     } else {
         B = (uint8_t)((s_fan_code[fan & 3] << 5) | 0x1F);
-        C = (uint8_t)(temp * 8) | mode_to_bits(mode);   /* C = 温度×8 + 模式位 */
+        C = (uint8_t)(temp * 8);   /* C = 温度×8（制冷） */
     }
 
     return ((uint64_t)A << 40) | ((uint64_t)(uint8_t)~A << 32)

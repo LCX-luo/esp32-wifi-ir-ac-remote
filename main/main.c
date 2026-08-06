@@ -149,19 +149,6 @@ static void app_command_execute(const cJSON *root)
         } else {
             ESP_LOGW(TAG, "[EXEC] fan 缺少字符串");
         }
-    } else if (!strcmp(cmd->valuestring, "mode")) {
-        const cJSON *m = cJSON_GetObjectItem(root, "mode");
-        if (m != NULL && cJSON_IsString(m)) {
-            if      (!strcmp(m->valuestring, "cool")) s_ac.mode = MIDEA_MODE_COOL;
-            else if (!strcmp(m->valuestring, "auto")) s_ac.mode = MIDEA_MODE_AUTO;
-            else if (!strcmp(m->valuestring, "dry"))  s_ac.mode = MIDEA_MODE_DRY;
-            else if (!strcmp(m->valuestring, "heat")) s_ac.mode = MIDEA_MODE_HEAT;
-            else if (!strcmp(m->valuestring, "fan"))  s_ac.mode = MIDEA_MODE_FAN;
-            else ESP_LOGW(TAG, "[EXEC] 未知模式: %s", m->valuestring);
-            app_ac_send();
-        } else {
-            ESP_LOGW(TAG, "[EXEC] mode 缺少字符串");
-        }
     } else {
         ESP_LOGW(TAG, "[EXEC] 未支持命令: %s", cmd->valuestring);
     }
