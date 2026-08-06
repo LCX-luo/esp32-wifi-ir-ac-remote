@@ -68,13 +68,13 @@ static void ir_print_command(uint64_t state)
     uint8_t fan_code = B >> 5;
     const char *fan_s = fan_code == 5 ? "自动" : fan_code == 4 ? "低" :
                         fan_code == 2 ? "中" : fan_code == 1 ? "高" : "?";
-    uint8_t mode_hi = C & 0xF0;
-    const char *mode_s = mode_hi == 0xF0 ? "制冷" : mode_hi == 0xF8 ? "自动" :
-                         mode_hi == 0xF4 ? "除湿/送风" : mode_hi == 0xFC ? "制热" : "?";
-    int temp_approx = (C >> 3);   /* 近似温度：C 低4位被模式码清掉，可能差 1°C */
+    uint8_t mode_bits = C & 0x0F;
+    const char *mode_s = mode_bits == 0x00 ? "制冷" : mode_bits == 0x08 ? "自动" :
+                         mode_bits == 0x04 ? "除湿/送风" : mode_bits == 0x0C ? "制热" : "?";
+    int temp = (C >> 3);   /* C = 温度×8 + 模式位，右移3位得温度 */
 
-    ESP_LOGI(TAG, "[CMD] %s A=0x%02X B=0x%02X C=0x%02X 风速=%s 模式=%s 温度≈%dC",
-             state_s, A, B, C, fan_s, mode_s, temp_approx);
+    ESP_LOGI(TAG, "[CMD] %s A=0x%02X B=0x%02X C=0x%02X 风速=%s 模式=%s 温度=%dC",
+             state_s, A, B, C, fan_s, mode_s, temp);
 }
 
 /* 解析一段（引导码后到帧间隔前）的 48 bit 数据为 A/B/C，并做反码校验 */
