@@ -149,6 +149,10 @@ static void app_command_execute(const cJSON *root)
         } else {
             ESP_LOGW(TAG, "[EXEC] fan 缺少字符串");
         }
+    } else if (!strcmp(cmd->valuestring, "swing")) {
+        ir_control_swing();   /* 扫风切换 */
+    } else if (!strcmp(cmd->valuestring, "quick_cool")) {
+        ir_control_quick_cool();   /* 快速制冷：16°C + 高速 + 扫风 */
     } else {
         ESP_LOGW(TAG, "[EXEC] 未支持命令: %s", cmd->valuestring);
     }

@@ -91,17 +91,20 @@
   </div>
 
   <div class="card">
+    <h2>快速设置</h2>
+    <div class="grid">
+      <button onclick="publish({cmd:'quick_cool'})" style="color:#2e7d32">❄ 快速制冷<br><small style="font-size:11px">16° 高速+扫风</small></button>
+      <button onclick="publish({cmd:'off'})" style="color:#b3261e">⏻ 一键关机</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>温度</h2>
     <div class="temp-row">
       <button class="round" onclick="tempStep(-1)">−</button>
       <div class="temp-val"><span id="temp-val">26</span><small>°C</small></div>
       <button class="round" onclick="tempStep(1)">+</button>
     </div>
-  </div>
-
-  <div class="card">
-    <h2>模式 <span style="float:right;color:#2b7fff;font-weight:700">制冷</span></h2>
-    <div style="font-size:12px;color:#8aa7c8">当前固定制冷模式，更多模式将在后续版本开放</div>
   </div>
 
   <div class="card">
@@ -112,6 +115,7 @@
       <button data-v="mid">中</button>
       <button data-v="high">高</button>
     </div>
+    <button onclick="publish({cmd:'swing'})" style="width:100%;margin-top:10px;padding:12px 0;border:1px solid #dbe9fb;border-radius:10px;background:#e8f1ff;color:#2b7fff;font-size:14px;font-weight:600">↕ 扫风切换</button>
   </div>
 
   <details class="collapse">

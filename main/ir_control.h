@@ -34,10 +34,19 @@
 void ir_control_init(void);
 
 /**
- * 发送一条 Midea 命令。
+ * 发送一条 Midea 命令（普通控制）。
  * @param power 电源开关
- * @param mode  MIDEA_MODE_*
+ * @param mode  MIDEA_MODE_*（暂固定制冷）
  * @param fan   MIDEA_FAN_*
  * @param temp  温度 17~30°C
  */
 void ir_control_send(bool power, uint8_t mode, uint8_t fan, uint8_t temp);
+
+/** 发射扫风切换命令（手机实测信号 A=0xB9 B=0xF5 C=0x04） */
+void ir_control_swing(void);
+
+/**
+ * 快速制冷预设（硬编码手机实测信号）：
+ * 16°C + 高风速 制冷帧 + 扫风开启帧。
+ */
+void ir_control_quick_cool(void);
